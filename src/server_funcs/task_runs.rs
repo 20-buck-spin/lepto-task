@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use leptos::{logging, prelude::*};
+use leptos::prelude::*;
 
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssr")]

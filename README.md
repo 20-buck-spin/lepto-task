@@ -8,14 +8,14 @@ A cron-like process manager for linux but with additional features:
 
 The project was built using Leptos, a full stack framework for the rust programming language (https://github.com/leptos-rs/leptos)
 
-[!CAUTION]
+## CAUTION!
 This project is not ready for production environments! 
-Currently meant for use in highly trusted environments only
+Currently meant for use in highly trusted environments only.
 I am intentionally not providing detailed instructions on how to run this project so that unassuming people are not hurt by 
 allowing an RCE engine running rampant on their system! 
-The entire project is meant to allow controlled RCE (Remote code Execution)
-Authentication has not been implemented yet (might be later if there is enough public interest in the project)
-I have tested the build on a linux mint machine (relatively up to date), and an updated arch linux machine
+The entire project is meant to allow controlled RCE (Remote code Execution).
+Authentication has not been implemented yet (might be later if there is enough public interest in the project).
+I have tested the build on a linux mint machine (relatively up to date), and an updated arch linux machine.
 I highly discourage running the process as root (for obvious safety reasons).
 
 # Motivation
