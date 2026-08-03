@@ -31,7 +31,9 @@ Steps to schedule first task
 - Clone the repo
 - Build/run the program using the leptos cli  https://github.com/leptos-rs/cargo-leptos
 - The project requires a DATABASE_URL env variable that points to a sqlite database that it can write to in the format DATABASE_URL="sqlite:./data/app.db?mode=rwc". It will try to look for a .env file in the directory from where the binary was launched. It will then try to find the sqlite db file, run migrations and then launch. 
-- Open the project in your browser (localhost:3000 by default)
+- Additional env vars like LEPTOS_SITE_ROOT might be needed depending on how you deploy.
+- Open the project in your browser (localhost:3000 by default).
+- The commands and binaries you will be running need to be accessible to leptask (to be noted if using a docker deployment)
 - In the tasks section, add a new task, and that's it. The task should launch based on the schedule provided. Tasks always run according to schedule, if a previous iteration has not finished, a new instance of the task will be launched anyway. This behaviour might be changed or made configurable in the future.
 - If you want leptotask to start on launch, just create a systemd unit (please do not launch it as root, better to create user systemd unit instead)
 
