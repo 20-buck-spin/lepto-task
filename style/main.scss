@@ -779,6 +779,10 @@ th {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
+.task-detail-container{
+    margin-block-end: 2rem;
+}
+
 .task-detail-info-container{
     display: flex;
     gap: 0.5rem
@@ -789,7 +793,8 @@ th {
 }
 
 .live-logs-table{
-    max-height: 20rem;
+    display: block;
+    max-height: 30rem;
     overflow: auto;
 }
 
