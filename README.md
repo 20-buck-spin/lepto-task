@@ -20,7 +20,10 @@ I highly discourage running the process as root (for obvious safety reasons).
 
 
 # Screenshots
+Home page
 ![Screenshot of homepage](screenshots/homepage.png)
+
+Running task view
 ![Screenshot of running task](screenshots/task_run_details.png)
 
 # Motivation
