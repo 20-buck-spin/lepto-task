@@ -53,8 +53,8 @@ For pipeline type of work, you can use the pipe operator in the command of the t
 - Improve UX/UI
 
 ## Contributions 
-Please create an issue for feature requests 
-Contributions are welcome. However, if you want to make any big changes, please open a discussion first.
+Please create an issue for feature requests.
+Contributions are welcome. However, if you want to make any big changes, please open an issue first.
 For small changes (body of a few functions, etc.), feel free to submit a PR
 
 Some things I could use help with are
