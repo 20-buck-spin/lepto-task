@@ -18,6 +18,11 @@ Authentication has not been implemented yet (might be later if there is enough p
 I have tested the build on a linux mint machine (relatively up to date), and an updated arch linux machine.
 I highly discourage running the process as root (for obvious safety reasons).
 
+
+# Screenshots
+![Screenshot of homepage](screenshots/homepage.png)
+![Screenshot of running task](screenshots/task_run_details.jpg)
+
 # Motivation
 This project started a means of learning the leptos framework
 
