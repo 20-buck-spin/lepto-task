@@ -21,7 +21,7 @@ I highly discourage running the process as root (for obvious safety reasons).
 
 # Screenshots
 ![Screenshot of homepage](screenshots/homepage.png)
-![Screenshot of running task](screenshots/task_run_details.jpg)
+![Screenshot of running task](screenshots/task_run_details.png)
 
 # Motivation
 This project started a means of learning the leptos framework
