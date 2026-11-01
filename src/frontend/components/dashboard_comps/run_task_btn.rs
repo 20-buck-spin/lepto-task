@@ -25,7 +25,7 @@ pub fn RunTaskBtn(task_id: i64, update_running_tasks_trigger: RwSignal<i32>) -> 
                             });
                         }
         >{
-                {if is_loading.get(){"Running"} else {"Run"}}
+                {move || if is_loading.get(){"Running"} else {"Run"}}
         }</button>
     }
 }
