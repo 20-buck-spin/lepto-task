@@ -187,14 +187,13 @@ pub async fn get_task_runs(
 #[server]
 pub async fn run_task(task_id: i64) -> Result<(), ServerFnError> {
     let task_manager: TaskManager = expect_context();
-    let ws_context: WsContext = expect_context();
     let db: Pool<Sqlite> = expect_context();
 
     let task: Task = query_as!(Task, "SELECT * FROM task WHERE id = ?", task_id)
         .fetch_one(&db)
         .await?;
 
-    task_manager.run_task(task, db, ws_context).await?;
+    task_manager.run_task(task).await?;
     Ok(())
 }
 

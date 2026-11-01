@@ -252,14 +252,20 @@ impl TryFrom<String> for LogLevel {
     }
 }
 
+impl LogLevel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            LogLevel::Critical => "CRITICAL",
+            LogLevel::Debug => "DEBUG",
+            LogLevel::Error => "ERROR",
+            LogLevel::Info => "INFO",
+            LogLevel::Warn => "WARN",
+        }
+    }
+}
+
 impl fmt::Display for LogLevel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            LogLevel::Critical => write!(f, "CRITICAL"),
-            LogLevel::Debug => write!(f, "DEBUG"),
-            LogLevel::Error => write!(f, "ERROR"),
-            LogLevel::Info => write!(f, "INFO"),
-            LogLevel::Warn => write!(f, "WARN"),
-        }
+        f.write_str(self.as_str())
     }
 }
