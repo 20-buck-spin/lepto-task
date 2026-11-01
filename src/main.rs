@@ -9,6 +9,7 @@ async fn main() {
     use leptos::prelude::*;
     use leptos_axum::{generate_route_list, LeptosRoutes};
     use leptotask::server_only::db;
+    use leptotask::server_only::log_handler::LogHandler;
     use leptotask::server_only::task_manager::manager::TaskManager;
     use leptotask::{app::*, ws::ws_context::WsContext};
 
@@ -29,11 +30,15 @@ async fn main() {
     tokio::spawn(async move { sys_info_collector_clone.init(ws_context_clone).await });
 
     // Init task manager
-    let task_manager = TaskManager::new();
     let db_clone = pool.clone();
     let ws_clone = ws_context.clone();
+    let log_handler = LogHandler::new(db_clone, ws_clone);
+
+    let db_clone = pool.clone();
+    let ws_clone = ws_context.clone();
+    let task_manager = TaskManager::new(log_handler, ws_clone, db_clone);
     let manager_clone = task_manager.clone();
-    tokio::spawn(async move { manager_clone.init(db_clone, ws_clone).await });
+    tokio::spawn(async move { manager_clone.init().await });
 
     // broadcase running tasks
 

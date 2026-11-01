@@ -5,7 +5,7 @@ use crate::{
     },
     server_only::{
         error::AppError,
-        log_handler::{handle_internal_task_log, handle_task_run_log},
+        log_handler::LogHandler,
         utils::{cleanup_tasks_db, create_task_run, mark_task_run_completed},
     },
     utils::get_run_logs_channel_name,
@@ -63,17 +63,23 @@ type RunningTasksMap = DashMap<i64, Arc<RwLock<RunningTaskInfo>>>;
 pub struct TaskManager {
     pub running_tasks: Arc<RunningTasksMap>,
     pub queued_tasks: Arc<Mutex<KeyedPriorityQueue<i64, QueuedTask>>>,
+    log_handler: LogHandler,
+    ws_context: WsContext,
+    db: Pool<Sqlite>,
     queue_modded_notify: Arc<Notify>,
     system_info: Arc<parking_lot::RwLock<sysinfo::System>>,
 }
 
 impl TaskManager {
-    pub fn new() -> Self {
+    pub fn new(log_handler: LogHandler, ws_context: WsContext, db: Pool<Sqlite>) -> Self {
         Self {
             running_tasks: Arc::new(DashMap::new()),
             queued_tasks: Arc::new(Mutex::new(KeyedPriorityQueue::new())),
             queue_modded_notify: Arc::new(Notify::new()),
             system_info: Arc::new(parking_lot::RwLock::new(sysinfo::System::new())),
+            log_handler,
+            db,
+            ws_context,
         }
     }
 
@@ -108,15 +114,15 @@ impl TaskManager {
         }
     }
 
-    pub async fn init(&self, db: Pool<Sqlite>, ws_context: WsContext) -> Result<(), AppError> {
+    pub async fn init(&self) -> Result<(), AppError> {
         // Mark all old runs as cancelled
-        if let Err(err) = cleanup_tasks_db(&db).await {
+        if let Err(err) = cleanup_tasks_db(&self.db).await {
             logging::error!("Failed to cleanup db tasks. Err {:?}", err);
         };
 
         // Pull all scheduled tasks from db and throw into tasks queue
         let tasks = query_as!(Task, "SELECT * FROM task WHERE is_active=true")
-            .fetch_all(&db)
+            .fetch_all(&self.db)
             .await
             .map_err(|e| {
                 AppError::TaskExecutorError(format!("Got db error when fetching tasks. Err {}", e))
@@ -130,18 +136,15 @@ impl TaskManager {
 
         // Init the loop to execute the tasks
         let self_clone = self.clone();
-        let db_clone = db.clone();
-        let ws_clone = ws_context.clone();
-        tokio::task::spawn(async move { self_clone.run_scheduled_tasks(db_clone, ws_clone).await });
+        tokio::task::spawn(async move { self_clone.run_scheduled_tasks().await });
 
         // Init loop to broadcast queued
         let self_clone = self.clone();
-        let ws_clone = ws_context.clone();
-        tokio::task::spawn(async move { self_clone.publish_scheduled_tasks_info(ws_clone).await });
+        tokio::task::spawn(async move { self_clone.publish_scheduled_tasks_info().await });
 
         // Init the loop to broadcast running
         let self_clone = self.clone();
-        tokio::task::spawn(async move { self_clone.publish_running_tasks_info(ws_context).await });
+        tokio::task::spawn(async move { self_clone.publish_running_tasks_info().await });
 
         // Init system processes info update loop
         let self_clone = self.clone();
@@ -149,8 +152,7 @@ impl TaskManager {
 
         // Init loop to flush stats to db (for cases when server process dies)
         let self_clone = self.clone();
-        let db_clone = db.clone();
-        tokio::task::spawn(async move { self_clone.flush_ongoing_run_stats_to_db(db_clone).await });
+        tokio::task::spawn(async move { self_clone.flush_ongoing_run_stats_to_db().await });
 
         Ok(())
     }
@@ -179,13 +181,13 @@ impl TaskManager {
         running_tasks_public
     }
 
-    async fn publish_running_tasks_info(&self, ws_context: WsContext) {
+    async fn publish_running_tasks_info(&self) {
         loop {
             let running_tasks_public = self.view_running_tasks().await;
             match serde_json::to_value(running_tasks_public) {
                 Ok(payload) => {
                     broadcast_to_channel(
-                        &ws_context,
+                        &self.ws_context,
                         RUNNING_PROCESSES,
                         crate::ws::WsMessage::Data {
                             channel: RUNNING_PROCESSES.into(),
@@ -215,13 +217,13 @@ impl TaskManager {
         queued_tasks
     }
 
-    async fn publish_scheduled_tasks_info(&self, ws_context: WsContext) {
+    async fn publish_scheduled_tasks_info(&self) {
         loop {
             let queued_tasks = self.view_scheduled_task_info().await;
             match serde_json::to_value(queued_tasks) {
                 Ok(payload) => {
                     broadcast_to_channel(
-                        &ws_context,
+                        &self.ws_context,
                         QUEUED_TASKS_INFO_CHANNEL,
                         crate::ws::WsMessage::Data {
                             channel: QUEUED_TASKS_INFO_CHANNEL.into(),
@@ -239,7 +241,7 @@ impl TaskManager {
         }
     }
 
-    async fn run_scheduled_tasks(&self, db: Pool<Sqlite>, ws_context: WsContext) {
+    async fn run_scheduled_tasks(&self) {
         loop {
             let notify_fut = self.queue_modded_notify.notified();
             let action = {
@@ -258,14 +260,10 @@ impl TaskManager {
 
             match action {
                 QueueState::Execute(queued_task) => {
-                    let db_clone = db.clone();
-                    let ws_clone = ws_context.clone();
                     let self_clone = self.clone();
                     let task_clone = queued_task.task.clone();
 
-                    tokio::spawn(async move {
-                        self_clone.run_task(task_clone, db_clone, ws_clone).await
-                    });
+                    tokio::spawn(async move { self_clone.run_task(task_clone).await });
 
                     match Cron::from_str(&queued_task.task.cron_expr) {
                         Ok(cron) => {
@@ -328,11 +326,11 @@ impl TaskManager {
         Ok(())
     }
 
-    pub async fn flush_ongoing_run_stats_to_db(&self, db: Pool<Sqlite>) {
+    pub async fn flush_ongoing_run_stats_to_db(&self) {
         loop {
             tokio::time::sleep(Duration::from_secs(FLUSH_STAT_TO_DB_TIMER)).await;
 
-            let Ok(mut tx) = db.begin().await.inspect_err(|err| {
+            let Ok(mut tx) = self.db.begin().await.inspect_err(|err| {
                 logging::log!("Failed to get db transaction on flush. Err {}", err)
             }) else {
                 continue;
@@ -468,12 +466,7 @@ impl TaskManager {
         }
     }
 
-    pub async fn run_task(
-        &self,
-        task: Task,
-        db: Pool<Sqlite>,
-        ws_context: WsContext,
-    ) -> Result<(), AppError> {
+    pub async fn run_task(&self, task: Task) -> Result<(), AppError> {
         // Validation to check if working dir is a valid path
         if !PathBuf::from(&task.working_dir).is_dir() {
             return Err(AppError::TaskExecutorError(format!(
@@ -482,7 +475,7 @@ impl TaskManager {
         };
 
         let task_run_created_dt = Utc::now();
-        let run_id = create_task_run(&db, task.id, &task_run_created_dt).await?;
+        let run_id = create_task_run(&self.db, task.id, &task_run_created_dt).await?;
         let task_logs_channel = get_run_logs_channel_name(&run_id);
 
         let parsed_args = shlex::split(&task.command)
@@ -501,7 +494,7 @@ impl TaskManager {
         {
             Ok(c) => c,
             Err(e) => {
-                let _ = mark_task_run_completed(&db, run_id, RunStatus::Failed, 0.0, 0).await;
+                let _ = mark_task_run_completed(&self.db, run_id, RunStatus::Failed, 0.0, 0).await;
                 return Err(AppError::TaskExecutorError(format!(
                     "Failed to launch task. Err {}",
                     e
@@ -509,7 +502,7 @@ impl TaskManager {
             }
         };
 
-        ws_context.add_channel(&task_logs_channel);
+        self.ws_context.add_channel(&task_logs_channel);
         let inner_child = child.inner();
 
         let process_ident_info = match inner_child.id() {
@@ -536,28 +529,31 @@ impl TaskManager {
             })),
         );
 
-        let db_clone = db.clone();
-        let ws_clone = ws_context.clone();
-        let run_id_clone = run_id.clone();
+        let self_clone = self.clone();
         if let Some(stdout) = inner_child.stdout.take() {
             let stdout_reader = BufReader::new(stdout);
             tokio::spawn(async move {
                 let mut lines = stdout_reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    handle_task_run_log(&db_clone, &ws_clone, &run_id_clone, line).await
+                    self_clone
+                        .log_handler
+                        .handle_task_run_log(&run_id, line)
+                        .await
                 }
             });
         };
 
-        let db_clone = db.clone();
-        let ws_clone = ws_context.clone();
         let run_id_clone = run_id.clone();
+        let self_clone = self.clone();
         if let Some(stderr) = inner_child.stderr.take() {
             let stderr_reader = BufReader::new(stderr);
             tokio::spawn(async move {
                 let mut lines = stderr_reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    handle_task_run_log(&db_clone, &ws_clone, &run_id_clone, line).await
+                    self_clone
+                        .log_handler
+                        .handle_task_run_log(&run_id, line)
+                        .await
                 }
             });
         };
@@ -567,9 +563,7 @@ impl TaskManager {
         tokio::task::spawn(async move { self_clone.gather_running_task_info(run_id).await });
 
         let running_tasks_clone = self.running_tasks.clone();
-        let run_id_clone = run_id.clone();
-        let ws_clone = ws_context.clone();
-        let db_clone = db.clone();
+        let self_clone = self.clone();
         tokio::task::spawn(async move {
             let run_exit_status: RunStatus;
             tokio::select! {
@@ -577,15 +571,15 @@ impl TaskManager {
                     let status = match exit_status {
                         Ok(status) => {
                             if status.success() {
-                                handle_internal_task_log(&run_id, "Run Success".into(), LogLevel::Info, &ws_clone, &db_clone).await;
+                                self_clone.log_handler.handle_internal_task_log(&run_id, "Run Success".into(), LogLevel::Info).await;
                                 RunStatus::Completed
                             } else {
-                                handle_internal_task_log(&run_id, "Run failed".into(), LogLevel::Info, &ws_clone, &db_clone).await;
+                                self_clone.log_handler.handle_internal_task_log(&run_id, "Run failed".into(), LogLevel::Info).await;
                                 RunStatus::Failed
                             }
                         },
                         Err(_) => {
-                            handle_internal_task_log(&run_id, "Run Failed".into(), LogLevel::Info, &ws_clone, &db_clone).await;
+                            self_clone.log_handler.handle_internal_task_log(&run_id, "Run Failed".into(), LogLevel::Info).await;
                             RunStatus::Failed
                         }
                     };
@@ -597,7 +591,7 @@ impl TaskManager {
                     // Send log that task was killed externally
                     let _ = child.kill().await;
                     let _ = child.wait().await;
-                    handle_internal_task_log(&run_id, "Run Terminated".into(), LogLevel::Info, &ws_clone, &db_clone).await;
+                    self_clone.log_handler.handle_internal_task_log(&run_id, "Run Terminated".into(), LogLevel::Info).await;
                     run_exit_status = RunStatus::Terminated;
                 }
             }
@@ -613,7 +607,7 @@ impl TaskManager {
                 None => (0.0, 0),
             };
             if let Err(err) = mark_task_run_completed(
-                &db_clone,
+                &self_clone.db,
                 run_id_clone,
                 run_exit_status,
                 max_cpu_percent,
@@ -624,7 +618,7 @@ impl TaskManager {
                 logging::error!("{}", err);
             };
 
-            ws_clone.remove_channel(&task_logs_channel);
+            self_clone.ws_context.remove_channel(&task_logs_channel);
         });
         Ok(())
     }
