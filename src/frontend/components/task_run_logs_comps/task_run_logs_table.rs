@@ -93,7 +93,7 @@ pub fn TaskRunLogsTable(run_id: i64) -> impl IntoView {
             </div>
 
 
-            <Suspense fallback= || view!{<TableSkeleton cols_len=6 rows_len=3/>}>
+            <Suspense fallback= || view!{<TableSkeleton cols_len=5 rows_len=3/>}>
             <div class="table-outer-container">
                 <div class="table-inner-container">
 
@@ -111,11 +111,13 @@ pub fn TaskRunLogsTable(run_id: i64) -> impl IntoView {
                                                 <table>
 
                                                     <thead>
-                                                        <th>"ID"</th>
-                                                        <th>"Created"</th>
-                                                        <th>"Level"</th>
-                                                        <th>"Message"</th>
-                                                        <th>"Raw Payload"</th>
+                                                        <tr>
+                                                            <th>"ID"</th>
+                                                            <th>"Created"</th>
+                                                            <th>"Level"</th>
+                                                            <th>"Message"</th>
+                                                            <th>"Raw Payload"</th>
+                                                        </tr>
                                                     </thead>
 
 
@@ -129,7 +131,7 @@ pub fn TaskRunLogsTable(run_id: i64) -> impl IntoView {
                                                                         <td>{log.created_dt.to_string()}</td>
                                                                         <td>{log.level.to_string()}</td>
                                                                         <td>{log.message.clone()}</td>
-                                                                        <td>{log.raw_payload.to_string()}</td>
+                                                                        <td>{log.raw_payload}</td>
                                                                     </tr>
                                                                 }
                                                             }).collect::<Vec<_>>()
@@ -143,8 +145,7 @@ pub fn TaskRunLogsTable(run_id: i64) -> impl IntoView {
                                         }
                                     },
                                     Some(Err(err)) => view! { <span>"Got error " {err.to_string()}</span> }.into_any(),
-                                    None => view! { <TableSkeleton rows_len=30 cols_len=6/> }.into_any(),
-                                }
+                                    None => view! { <TableSkeleton rows_len=30 cols_len=5/> }.into_any(),}
                             })
 
                         }
