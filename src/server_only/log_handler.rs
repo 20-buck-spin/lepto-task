@@ -95,6 +95,7 @@ impl LogHandler {
         let _ = tx.commit().await.inspect_err(|err| {
             logging::error!("Failed to commit log flush transaction. Err {}", err)
         });
+        batch.clear();
     }
 
     fn extract_level(map: &serde_json::Map<String, Value>) -> LogLevel {
