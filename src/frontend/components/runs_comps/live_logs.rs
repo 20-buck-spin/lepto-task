@@ -19,12 +19,13 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
     let ws = expect_context::<WsClientContext>();
     let live_logs: RwSignal<VecDeque<(usize, LogEntry)>> =
         RwSignal::new(VecDeque::with_capacity(200));
+
     let element = NodeRef::<Table>::new();
     let auto_scroll = RwSignal::new(true);
+
     let UseScrollReturn {
-        y,
         arrived_state,
-        set_y,
+        is_scrolling,
         ..
     } = use_scroll(element);
 
@@ -34,9 +35,10 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
     Effect::new(move |_| {
         let channel = channel_name_clone.clone();
         untrack(move || {
-            ws.send.run(WsMessage::Subscribe { channel: channel });
+            ws.send.run(WsMessage::Subscribe { channel });
         });
     });
+
     let channel_name_clone = channel_name.clone();
     on_cleanup(move || {
         ws.send.run(WsMessage::Unsubscribe {
@@ -45,21 +47,21 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
     });
 
     Effect::new(move |_| {
-        auto_scroll.set(arrived_state.get().bottom);
+        let arrived = arrived_state.get();
+        if element.get().is_some() && is_scrolling.get() {
+            auto_scroll.set(arrived.bottom);
+        }
     });
 
-    // Scroll to bottom when live_logs changes
     Effect::new(move |_| {
-        let logs_not_empty = live_logs.with(|live_logs| !live_logs.is_empty()); // track rows
-        let is_auto_scroll = move || auto_scroll.get();
-        if logs_not_empty && is_auto_scroll() {
-            let set_y = set_y.clone();
-            request_animation_frame(move || {
-                logging::log!("Inside scroll effect");
-                if let Some(el) = element.get() {
-                    set_y(el.scroll_height() as f64)
-                }
-            });
+        let logs_not_empty = live_logs.with(|live_logs| !live_logs.is_empty());
+        let maybe_el = element.get();
+        if logs_not_empty && auto_scroll.get_untracked() {
+            if let Some(el) = maybe_el {
+                request_animation_frame(move || {
+                    el.set_scroll_top(el.scroll_height());
+                });
+            }
         }
     });
 
@@ -97,6 +99,7 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
             }
         }
     });
+
     view! {
         <div class="table-header">
             <h3>"Live logs"</h3>
@@ -105,33 +108,33 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
             when=move || live_logs.with(|l| !l.is_empty())
             fallback=|| view! { <EmptyTable display_message={"No logs captured".to_string()}/> }
         >
-            <div class = "live-logs-table-container" >
-            <table class="live-logs-table" node_ref=element>
-                <thead>
-                    <tr>
-                        <th>"Created"</th>
-                        <th>"Level"</th>
-                        <th>"Message"</th>
-                        <th>"Raw Payload"</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <For
-                        each=move || live_logs.get()
-                        key=|(id, _log)| *id
-                        children=|(_, log)| {
-                            view! {
-                                <tr>
-                                    <td>{log.timestamp.to_string()}</td>
-                                    <td>{log.level.to_string()}</td>
-                                    <td>{log.message.clone()}</td>
-                                    <td>{log.raw_payload.to_string()}</td>
-                                </tr>
+            <div class="live-logs-table-container" >
+                <table class="live-logs-table" node_ref=element>
+                    <thead>
+                        <tr>
+                            <th>"Created"</th>
+                            <th>"Level"</th>
+                            <th>"Message"</th>
+                            <th>"Raw Payload"</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <For
+                            each=move || live_logs.get()
+                            key=|(id, _log)| *id
+                            children=|(_, log)| {
+                                view! {
+                                    <tr>
+                                        <td>{log.timestamp.to_string()}</td>
+                                        <td>{log.level.to_string()}</td>
+                                        <td>{log.message.clone()}</td>
+                                        <td>{log.raw_payload.to_string()}</td>
+                                    </tr>
+                                }
                             }
-                        }
-                    />
-                </tbody>
-            </table>
+                        />
+                    </tbody>
+                </table>
             </div>
         </Show>
     }
