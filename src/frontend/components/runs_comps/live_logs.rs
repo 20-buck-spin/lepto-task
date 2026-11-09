@@ -1,14 +1,12 @@
 use std::collections::VecDeque;
 
-use leptos::{
-    html::{Div, Table},
-    logging,
-    prelude::*,
-};
+use leptos::{html::Table, prelude::*};
 use leptos_use::{use_scroll, UseScrollReturn};
 
 use crate::{
-    frontend::components::empty_table::EmptyTable,
+    frontend::components::{
+        empty_table::EmptyTable, task_run_logs_comps::raw_log_modal::RawLogModal,
+    },
     models::task_models::LogEntry,
     utils::get_run_logs_channel_name,
     ws::{WsClientContext, WsMessage},
@@ -17,6 +15,8 @@ use crate::{
 #[component]
 pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
     let ws = expect_context::<WsClientContext>();
+    let show_raw_log_modal: RwSignal<bool> = RwSignal::new(false);
+    let raw_log_for_display: RwSignal<String> = RwSignal::new(String::new());
     let live_logs: RwSignal<VecDeque<(usize, LogEntry)>> =
         RwSignal::new(VecDeque::with_capacity(200));
 
@@ -101,6 +101,11 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
     });
 
     view! {
+
+        <Show when=move || show_raw_log_modal.get()>
+            <RawLogModal on_close = move || {show_raw_log_modal.set(false)} raw_log=raw_log_for_display />
+        </Show>
+
         <div class="table-header">
             <h3>"Live logs"</h3>
         </div>
@@ -115,20 +120,23 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
                             <th>"Created"</th>
                             <th>"Level"</th>
                             <th>"Message"</th>
-                            <th>"Raw Payload"</th>
+                            <th>""</th>
                         </tr>
                     </thead>
                     <tbody>
                         <For
                             each=move || live_logs.get()
                             key=|(id, _log)| *id
-                            children=|(_, log)| {
+                            children= move |(_, log)| {
                                 view! {
                                     <tr>
                                         <td>{log.timestamp.to_string()}</td>
                                         <td>{log.level.to_string()}</td>
                                         <td>{log.message.clone()}</td>
-                                        <td>{log.raw_payload.to_string()}</td>
+                                        <td>{view!{
+                                            <button on:click= move |_| {show_raw_log_modal.set(true); raw_log_for_display.set(log.raw_payload.clone())}
+                                            >View Raw Logs</button>
+                                        }}</td>
                                     </tr>
                                 }
                             }

@@ -3,6 +3,7 @@ use leptos::{logging, prelude::*};
 use crate::{
     frontend::components::{
         empty_table::EmptyTable, pagination::Paginator, table_skeleton::TableSkeleton,
+        task_run_logs_comps::raw_log_modal::RawLogModal,
     },
     models::task_models::RunLogFilters,
     server_funcs::task_run_logs::get_task_run_logs,
@@ -13,6 +14,8 @@ pub fn TaskRunLogsTable(run_id: i64) -> impl IntoView {
     let current_page: RwSignal<i64> = RwSignal::new(1);
     let page_size: RwSignal<i64> = RwSignal::new(30);
 
+    let show_raw_log_modal: RwSignal<bool> = RwSignal::new(false);
+    let raw_log_for_display: RwSignal<String> = RwSignal::new(String::new());
     let log_filters = RwSignal::new(RunLogFilters {
         run_id: run_id,
         ..Default::default()
@@ -45,6 +48,9 @@ pub fn TaskRunLogsTable(run_id: i64) -> impl IntoView {
     });
 
     view! {
+        <Show when=move || show_raw_log_modal.get()>
+            <RawLogModal on_close = move || {show_raw_log_modal.set(false)} raw_log=raw_log_for_display />
+        </Show>
         <div>
 
             <div class="table-header">
@@ -98,11 +104,8 @@ pub fn TaskRunLogsTable(run_id: i64) -> impl IntoView {
                 <div class="table-inner-container">
 
                     {
-
                         move || {
-
-                            logs.with(|logs_res| {
-                                match logs_res {
+                                match logs.get() {
                                     Some(Ok(logs_list)) => {
                                         if logs_list.data.is_empty() {
                                             view! { <EmptyTable display_message="No logs found".to_string()/> }.into_any()
@@ -116,29 +119,32 @@ pub fn TaskRunLogsTable(run_id: i64) -> impl IntoView {
                                                             <th>"Created"</th>
                                                             <th>"Level"</th>
                                                             <th>"Message"</th>
-                                                            <th>"Raw Payload"</th>
+                                                            <th>""</th>
                                                         </tr>
                                                     </thead>
 
 
                                                     <tbody>
-                                                        {
-                                                            let logs_list_inner = logs_list.data.clone();
-                                                            logs_list_inner.into_iter().map(|log| {
-                                                                view!{
+                                                        <For
+                                                        each=move || logs_list.data.clone()
+                                                        key=|log| log.id
+                                                        children= move |log| {
+                                                            view!{
                                                                     <tr>
                                                                         <td>{log.id}</td>
                                                                         <td>{log.created_dt.to_string()}</td>
                                                                         <td>{log.level.to_string()}</td>
                                                                         <td>{log.message.clone()}</td>
-                                                                        <td>{log.raw_payload}</td>
+                                                                        <td>{view!{
+                                                                            <button on:click= move |_| {show_raw_log_modal.set(true);
+                                                                                raw_log_for_display.set(log.raw_payload.clone())
+                                                                            }
+                                                                            >View Raw Logs</button>
+                                                                        }}</td>
                                                                     </tr>
                                                                 }
-                                                            }).collect::<Vec<_>>()
-                                                        }
-
+                                                        } />
                                                     </tbody>
-
                                                 </table>
                                                 <Paginator total_count=logs_list.total_count on_change=on_page_change current_page=current_page page_size=page_size/>
                                             }.into_any()
@@ -146,11 +152,7 @@ pub fn TaskRunLogsTable(run_id: i64) -> impl IntoView {
                                     },
                                     Some(Err(err)) => view! { <span>"Got error " {err.to_string()}</span> }.into_any(),
                                     None => view! { <TableSkeleton rows_len=30 cols_len=5/> }.into_any(),}
-                            })
-
                         }
-
-
                     }
 
                 </div>

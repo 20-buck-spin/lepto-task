@@ -36,12 +36,9 @@ pub fn TasksTable() -> impl IntoView {
         <Suspense fallback= || view!{<TableSkeleton cols_len=3 rows_len=3/>}>
         <div class="table-outer-container">
             <div class="table-inner-container">
-
                 {
                     move || {
-                        tasks.with(|tasks_res| {
-
-                            match tasks_res {
+                            match tasks.get() {
                                 Some(Ok(tasks_list)) => {
                                     if tasks_list.data.is_empty() {
                                         view! { <EmptyTable display_message="No tasks found".to_string()/> }.into_any()
@@ -60,29 +57,31 @@ pub fn TasksTable() -> impl IntoView {
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {
-                                                        let tasks_list = tasks_list.data.clone();
-                                                        tasks_list.into_iter().map(|task|
+
+                                                <For
+                                                    each= move || tasks_list.data.clone()
+                                                    key=|task| task.id
+                                                    children= move |task| {
                                                         view!{
-                                                            <tr>
-                                                                <td>{task.id}</td>
-                                                                <td>{task.name.clone()}</td>
-                                                                <td>{task.command.clone()}</td>
-                                                                <td>{task.working_dir.clone()}</td>
-                                                                <td>{task.cron_expr.clone()}</td>
-                                                                <td>{task.is_active}</td>
-                                                                <td>
-                                                                    <button
-                                                                        on:click= move |_| {
-                                                                            selected_task.set(Some(task.clone()));
-                                                                            show_crud_modal.set(true)
-                                                                        }
-                                                                    >"edit"</button>
-                                                                </td>
-                                                            </tr>
-                                                        }
-                                                    ).collect::<Vec<_>>()
+                                                        <tr>
+                                                            <td>{task.id}</td>
+                                                            <td>{task.name.clone()}</td>
+                                                            <td>{task.command.clone()}</td>
+                                                            <td>{task.working_dir.clone()}</td>
+                                                            <td>{task.cron_expr.clone()}</td>
+                                                            <td>{task.is_active}</td>
+                                                            <td>
+                                                                <button
+                                                                    on:click= move |_| {
+                                                                        selected_task.set(Some(task.clone()));
+                                                                        show_crud_modal.set(true)
+                                                                    }
+                                                                >"edit"</button>
+                                                            </td>
+                                                        </tr>
                                                     }
+                                                    }
+                                                />
                                                 </tbody>
                                             </table>
                                         }.into_any()
@@ -92,9 +91,6 @@ pub fn TasksTable() -> impl IntoView {
                                 Some(Err(err)) => view! { <span>"Got error " {err.to_string()}</span> }.into_any(),
                                 None => view! { <TableSkeleton rows_len=3 cols_len=5/> }.into_any(),
                             }
-
-
-                        })
                     }
                 }
             </div>

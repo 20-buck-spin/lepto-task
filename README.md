@@ -50,7 +50,7 @@ For pipeline type of work, you can use the pipe operator in the command of the t
 
 ## Todo 
 - impl authentication
-- Improve UX/UI
+- Improve UX/UI: 
 
 ## Contributions 
 Please create an issue for feature requests.
