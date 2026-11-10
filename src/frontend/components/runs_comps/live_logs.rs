@@ -1,7 +1,5 @@
-use std::collections::VecDeque;
-
 use leptos::{html::Table, prelude::*};
-use leptos_use::{use_scroll, UseScrollReturn};
+use std::collections::VecDeque;
 
 use crate::{
     frontend::components::{
@@ -22,12 +20,7 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
 
     let element = NodeRef::<Table>::new();
     let auto_scroll = RwSignal::new(true);
-
-    let UseScrollReturn {
-        arrived_state,
-        is_scrolling,
-        ..
-    } = use_scroll(element);
+    let is_programmatic_scroll = RwSignal::new(false);
 
     let channel_name = get_run_logs_channel_name(&run_id);
 
@@ -46,22 +39,41 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
         });
     });
 
-    Effect::new(move |_| {
-        let arrived = arrived_state.get();
-        if element.get().is_some() && is_scrolling.get() {
-            auto_scroll.set(arrived.bottom);
+    // 1. Detect user scroll vs programmatic scroll
+    let on_table_scroll = move |_| {
+        // Ignore scroll events triggered by our own auto-scroller
+        if is_programmatic_scroll.get_untracked() {
+            return;
         }
-    });
 
+        if let Some(el) = element.get_untracked() {
+            let scroll_top = el.scroll_top();
+            let scroll_height = el.scroll_height();
+            let client_height = el.client_height();
+
+            // Allow a small threshold (e.g. 10px) for sub-pixel rendering differences
+            let is_at_bottom = (scroll_height - scroll_top - client_height).abs() <= 10;
+            auto_scroll.set(is_at_bottom);
+        }
+    };
+
+    // 2. Perform auto-scroll when `live_logs` updates
     Effect::new(move |_| {
-        let logs_not_empty = live_logs.with(|live_logs| !live_logs.is_empty());
-        let maybe_el = element.get();
+        // Track changes to live_logs
+        let logs_not_empty = live_logs.with(|logs| !logs.is_empty());
+
         if logs_not_empty && auto_scroll.get_untracked() {
-            if let Some(el) = maybe_el {
-                request_animation_frame(move || {
+            request_animation_frame(move || {
+                if let Some(el) = element.get_untracked() {
+                    is_programmatic_scroll.set(true);
                     el.set_scroll_top(el.scroll_height());
-                });
-            }
+
+                    // Reset the guard on the next frame after the scroll event has processed
+                    request_animation_frame(move || {
+                        is_programmatic_scroll.set(false);
+                    });
+                }
+            });
         }
     });
 
@@ -101,7 +113,6 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
     });
 
     view! {
-
         <Show when=move || show_raw_log_modal.get()>
             <RawLogModal on_close = move || {show_raw_log_modal.set(false)} raw_log=raw_log_for_display />
         </Show>
@@ -113,8 +124,12 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
             when=move || live_logs.with(|l| !l.is_empty())
             fallback=|| view! { <EmptyTable display_message={"No logs captured".to_string()}/> }
         >
-            <div class="live-logs-table-container" >
-                <table class="live-logs-table" node_ref=element>
+            <div class="live-logs-table-container">
+                <table
+                    class="live-logs-table"
+                    node_ref=element
+                    on:scroll=on_table_scroll
+                >
                     <thead>
                         <tr>
                             <th>"Created"</th>
@@ -133,10 +148,14 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
                                         <td>{log.timestamp.to_string()}</td>
                                         <td>{log.level.to_string()}</td>
                                         <td>{log.message.clone()}</td>
-                                        <td>{view!{
-                                            <button on:click= move |_| {show_raw_log_modal.set(true); raw_log_for_display.set(log.raw_payload.clone())}
-                                            >View Raw Logs</button>
-                                        }}</td>
+                                        <td>
+                                            <button on:click= move |_| {
+                                                show_raw_log_modal.set(true);
+                                                raw_log_for_display.set(log.raw_payload.clone());
+                                            }>
+                                                "View Raw Logs"
+                                            </button>
+                                        </td>
                                     </tr>
                                 }
                             }

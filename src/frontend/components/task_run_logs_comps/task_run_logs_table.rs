@@ -34,8 +34,11 @@ pub fn TaskRunLogsTable(run_id: i64) -> impl IntoView {
                 return;
             }
             Ok(new_filters) => {
-                // limit and off set are defaulted
-                log_filters.set(new_filters);
+                if log_filters.get_untracked() == new_filters {
+                    logs.refetch();
+                } else {
+                    log_filters.set(new_filters);
+                }
             }
         }
     };
@@ -52,7 +55,6 @@ pub fn TaskRunLogsTable(run_id: i64) -> impl IntoView {
             <RawLogModal on_close = move || {show_raw_log_modal.set(false)} raw_log=raw_log_for_display />
         </Show>
         <div>
-
             <div class="table-header">
                 <h3>"Run logs"</h3>
             </div>
@@ -99,7 +101,7 @@ pub fn TaskRunLogsTable(run_id: i64) -> impl IntoView {
             </div>
 
 
-            <Suspense fallback= || view!{<TableSkeleton cols_len=5 rows_len=3/>}>
+            <Suspense fallback= || view!{<TableSkeleton cols_len=5 rows_len=30/>}>
             <div class="table-outer-container">
                 <div class="table-inner-container">
 
