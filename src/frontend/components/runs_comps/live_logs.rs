@@ -1,4 +1,4 @@
-use leptos::{html::Table, prelude::*};
+use leptos::{ev::WheelEvent, html::Table, prelude::*};
 use std::collections::VecDeque;
 
 use crate::{
@@ -10,17 +10,19 @@ use crate::{
     ws::{WsClientContext, WsMessage},
 };
 
+const MAX_LOGS_AT_BOTTOM: usize = 200;
+const MAX_LOGS_WHILE_PAUSED: usize = 2000;
+
 #[component]
 pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
     let ws = expect_context::<WsClientContext>();
     let show_raw_log_modal: RwSignal<bool> = RwSignal::new(false);
     let raw_log_for_display: RwSignal<String> = RwSignal::new(String::new());
     let live_logs: RwSignal<VecDeque<(usize, LogEntry)>> =
-        RwSignal::new(VecDeque::with_capacity(200));
+        RwSignal::new(VecDeque::with_capacity(MAX_LOGS_AT_BOTTOM));
 
     let element = NodeRef::<Table>::new();
     let auto_scroll = RwSignal::new(true);
-    let is_programmatic_scroll = RwSignal::new(false);
 
     let channel_name = get_run_logs_channel_name(&run_id);
 
@@ -39,45 +41,65 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
         });
     });
 
-    // 1. Detect user scroll vs programmatic scroll
-    let on_table_scroll = move |_| {
-        // Ignore scroll events triggered by our own auto-scroller
-        if is_programmatic_scroll.get_untracked() {
-            return;
+    // 1. Mouse wheel up immediately disengages auto-scroll
+    let on_table_wheel = move |ev: WheelEvent| {
+        if ev.delta_y() < 0.0 {
+            auto_scroll.set(false);
         }
+    };
 
+    // 2. Scroll event checks if the user is at (or near) the bottom
+    let on_table_scroll = move |_| {
         if let Some(el) = element.get_untracked() {
             let scroll_top = el.scroll_top();
             let scroll_height = el.scroll_height();
             let client_height = el.client_height();
 
-            // Allow a small threshold (e.g. 10px) for sub-pixel rendering differences
-            let is_at_bottom = (scroll_height - scroll_top - client_height).abs() <= 10;
-            auto_scroll.set(is_at_bottom);
+            let distance_from_bottom = scroll_height - scroll_top - client_height;
+
+            if distance_from_bottom <= 30 {
+                if !auto_scroll.get_untracked() {
+                    auto_scroll.set(true);
+                }
+            } else if distance_from_bottom > 80 {
+                // User dragged the scrollbar thumb up
+                if auto_scroll.get_untracked() {
+                    auto_scroll.set(false);
+                }
+            }
         }
     };
 
-    // 2. Perform auto-scroll when `live_logs` updates
+    // 3. Auto-scroll synchronously after DOM updates
     Effect::new(move |_| {
-        // Track changes to live_logs
-        let logs_not_empty = live_logs.with(|logs| !logs.is_empty());
+        // Subscribe to both live_logs and auto_scroll
+        let logs_len = live_logs.with(|logs| logs.len());
+        let should_scroll = auto_scroll.get();
 
-        if logs_not_empty && auto_scroll.get_untracked() {
+        if logs_len > 0 && should_scroll {
+            // Trim excess logs accumulated while paused
+            if logs_len > MAX_LOGS_AT_BOTTOM {
+                live_logs.update(|logs| {
+                    while logs.len() > MAX_LOGS_AT_BOTTOM {
+                        logs.pop_front();
+                    }
+                });
+            }
+
+            if let Some(el) = element.get() {
+                el.set_scroll_top(el.scroll_height());
+            }
             request_animation_frame(move || {
-                if let Some(el) = element.get_untracked() {
-                    is_programmatic_scroll.set(true);
-                    el.set_scroll_top(el.scroll_height());
-
-                    // Reset the guard on the next frame after the scroll event has processed
-                    request_animation_frame(move || {
-                        is_programmatic_scroll.set(false);
-                    });
+                if auto_scroll.get_untracked() {
+                    if let Some(el) = element.get_untracked() {
+                        el.set_scroll_top(el.scroll_height());
+                    }
                 }
             });
         }
     });
 
-    // Add to rows
+    // 4. Add incoming WS logs
     Effect::new({
         let mut local_id_counter: usize = 0;
         move |_| {
@@ -86,10 +108,17 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
                     WsMessage::Data { channel, payload } if &channel == &channel_name => {
                         match serde_json::from_value::<LogEntry>(payload.clone()) {
                             Ok(log_line) => {
+                                let is_following = auto_scroll.get_untracked();
                                 live_logs.update(|live_logs| {
-                                    if live_logs.len() == 200 {
-                                        live_logs.pop_front();
+                                    let limit = if is_following {
+                                        MAX_LOGS_AT_BOTTOM
+                                    } else {
+                                        MAX_LOGS_WHILE_PAUSED
                                     };
+
+                                    while live_logs.len() >= limit {
+                                        live_logs.pop_front();
+                                    }
                                     live_logs.push_back((local_id_counter, log_line));
                                     local_id_counter += 1;
                                 });
@@ -127,7 +156,9 @@ pub fn TaskRunLiveLogs(run_id: i64) -> impl IntoView {
             <div class="live-logs-table-container">
                 <table
                     class="live-logs-table"
+                    style="overflow-anchor: none;"
                     node_ref=element
+                    on:wheel=on_table_wheel
                     on:scroll=on_table_scroll
                 >
                     <thead>
