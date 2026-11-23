@@ -26,8 +26,8 @@ impl LogHandler {
         let (tx, mut rx) = mpsc::channel::<(i64, LogEntry)>(10_000);
 
         tokio::spawn(async move {
-            let mut batch: Vec<(i64, LogEntry)> = Vec::with_capacity(500);
-            let mut interval = tokio::time::interval(Duration::from_millis(500));
+            let mut batch: Vec<(i64, LogEntry)> = Vec::with_capacity(1000);
+            let mut interval = tokio::time::interval(Duration::from_millis(1500));
             loop {
                 tokio::select! {
                     maybe = rx.recv() => {
@@ -39,6 +39,7 @@ impl LogHandler {
                                 }
                             },
                             None => {
+
                                     LogHandler::flush_logs(&db, &mut batch).await;
                             }
                         }
